@@ -45,7 +45,8 @@ impl TipBox {
     pub fn withdraw(&mut self, amount: U128) -> Promise {
         let caller = env::predecessor_account_id();
         let owed = self.balances.get(&caller).copied().unwrap_or(0);
-        self.balances.insert(caller.clone(), owed.saturating_sub(amount.0));
+        require!(amount.0 <= owed, "insufficient tip balance");
+        self.balances.insert(caller.clone(), owed - amount.0);
         Promise::new(caller).transfer(NearToken::from_yoctonear(amount.0))
     }
 }
@@ -54,7 +55,7 @@ impl TipBox {
 mod tests {
     use super::*;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::testing_env;
+    use near_sdk::{testing_env, NearToken};
 
     fn context(predecessor: AccountId, deposit: u128) {
         testing_env!(VMContextBuilder::new()
@@ -90,5 +91,15 @@ mod tests {
         context(accounts(0), 0);
         let _ = c.withdraw(U128(400));
         assert_eq!(c.balance_of(accounts(0)).0, 600);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient tip balance")]
+    fn cannot_withdraw_more_than_owed() {
+        let mut c = TipBox::new();
+        context(accounts(1), 100);
+        c.tip(accounts(0));
+        context(accounts(0), 0);
+        let _ = c.withdraw(U128(101));
     }
 }
